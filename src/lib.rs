@@ -1,3 +1,3 @@
 //! Analytical query engine over Parquet.
 
-pub mod types;
+pub mod filters;
