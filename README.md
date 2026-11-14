@@ -1,41 +1,12 @@
-# Rust Template
+# query-engine
 
-A strict Rust project starter focused on safety, performance, and predictable tooling.
+An analytical query engine written from scratch. The goal is to learn and implement the big pieces of what make up a modern query engine, not to build the latest algorithms for micro-optimizations in query execution. Query performance benchmarks are run against Clickbench and TPC-H.
 
-## Included
+The key pieces are:
 
-- Pinned stable Rust toolchain with `rustfmt` and `clippy`
-- Strict Rust and Clippy lint configuration
-- Release, profiling, and development Cargo profiles
-- Stable `rustfmt.toml`
-- GitHub Actions CI for format, lint, docs, and test checks, with dependency caching
-- Dependabot updates for Cargo dependencies and GitHub Actions
-- Build caching via [`kache`](https://github.com/kunobi-ninja/kache), set as the `rustc-wrapper` in `.cargo/config.toml`
-
-## First Steps
-
-1. Install the build cache wrapper:
-
-   ```bash
-   cargo install kache --locked
-   ```
-
-   `kache` is set as `rustc-wrapper` in `.cargo/config.toml`, so it must be on
-   `PATH` to build. To build without it, run `RUSTC_WRAPPER= cargo build`.
-
-2. Rename the package in `Cargo.toml`.
-3. Update `description` and `repository` in `Cargo.toml`. Keep the MIT license or
-   update both `license` and `LICENSE` to match your project's terms. Preserve
-   existing copyright notices on retained template material and add your own
-   for your contributions.
-4. Replace `src/lib.rs` with your project code.
-5. Run:
-
-   ```bash
-   cargo fmt
-   cargo clippy --all-targets --all-features
-   cargo test
-   ```
+- **Reads:** Skip, decompress, and decode only the bytes the query needs. Parquet files are the current target.
+- **Execution:** Keep hardware saturated, efficiently pipeline/parallelize work, auto-vectorization, push vs. pull model, etc.
+- **Optimizer:** Build a query optimizer. This is what turns a query into the plan that the execution stage runs.
 
 ## License
 

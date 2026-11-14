@@ -15,5 +15,9 @@ mutants.out*/
 # macOS metadata
 .DS_Store
 
-# TPC-H benchmark data (too large for GitHub)
+# Benchmark data (too large for GitHub)
 tpch-data/
+clickbench-data/
+
+# Private notes
+docs/PLAN.md
