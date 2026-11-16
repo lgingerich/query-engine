@@ -14,6 +14,12 @@ pub enum EngineError {
     /// SQL couldn't be parsed or isn't supported.
     #[error(transparent)]
     Query(#[from] QueryError),
+    /// No table registered under this name
+    #[error("table `{0}` not found")]
+    TableNotFound(String),
+    /// A table is already registered under this name
+    #[error("table `{0}` already exists")]
+    TableExists(String),
     /// I/O outside a specific source, e.g. writing results.
     #[error(transparent)]
     Io(#[from] std::io::Error),

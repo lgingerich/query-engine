@@ -2,5 +2,6 @@
 
 pub mod errors;
 pub mod parquet;
-pub mod schema;
 pub mod query;
+pub mod session;
+pub mod types;

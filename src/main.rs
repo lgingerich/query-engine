@@ -1,12 +1,10 @@
-//! Runs a sample query against the TPC-H data
+//! Runs a sample query
 
 use std::path::Path;
 
-use sqlparser::dialect::GenericDialect;
-use sqlparser::parser::Parser;
-
 use query_engine::errors::EngineError;
 use query_engine::parquet::ParquetSource;
+use query_engine::session::Session;
 
 /*
 TODO:
@@ -40,19 +38,20 @@ Various Notes
 */
 
 fn main() -> Result<(), EngineError> {
-    // Representative query for customer.parquet:
-    // SELECT * FROM customer WHERE c_custkey <= 37500;
+    // Register table
+    let path = Path::new("./tpch-data/customer.parquet");
+    let mut session = Session::new();
+    session.register("customer", ParquetSource::open(path)?)?;
 
+    // Build and execute query
     let sql = "\
         SELECT * FROM customer \
         WHERE c_custkey <= 37500 \
         LIMIT 5; \
     ";
-    let query = query_engine::query::parse(sql)?;
-    println!("{query:?}");
+    let results = session.execute(sql)?; // mock api method
 
-    let path = Path::new("./tpch-data/customer.parquet");
-    let source = ParquetSource::open(path)?;
+    println!("{results:#?}");
 
     Ok(())
 }
