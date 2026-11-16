@@ -1,3 +1,5 @@
+//! Engine-owned schema, independent of any file format
+
 /// Logical type of a column: what values mean, not how a file stores them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DataType {
@@ -26,13 +28,18 @@ pub enum DataType {
     Binary,
 }
 
+/// A named, typed column
 #[derive(Debug)]
 pub struct Field {
+    /// Column name
     pub name: String,
+    /// Logical type
     pub data_type: DataType,
+    /// Whether the column can contain nulls
     pub nullable: bool,
 }
 
+/// Ordered list of columns, column index `i` is `fields[i]`
 #[derive(Debug)]
 pub struct Schema {
     fields: Vec<Field>,

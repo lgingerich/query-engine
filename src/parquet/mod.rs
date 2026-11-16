@@ -1,3 +1,5 @@
+//! Parquet table source
+
 pub mod errors;
 pub mod schema;
 
@@ -17,12 +19,19 @@ TODO: Handle data page v1 vs v2
 
 */
 
+/// An opened Parquet file: reader, footer, and engine schema
 pub struct ParquetSource {
     reader: SerializedFileReader<File>,
     schema: Schema,
 }
 
 impl ParquetSource {
+    /// Opens a Parquet file, reads the footer, and converts the schema
+    ///
+    /// # Errors
+    ///
+    /// Fails if the file can't be opened, isn't valid Parquet, or has an
+    /// unsupported column type
     pub fn open(path: &Path) -> Result<Self, ParquetFileError> {
         // NOTE: The parquet crate reader has a moderate amount of logic baked in for how footers are read and verified.
         // When working with fetches from object storage, need to re-evaluate this.
@@ -32,6 +41,7 @@ impl ParquetSource {
         Ok(Self { reader, schema })
     }
 
+    /// Engine schema for this file
     pub fn schema(&self) -> &Schema {
         &self.schema
     }

@@ -1,3 +1,5 @@
+//! SQL text -> engine [`Query`]. Only module that touches `sqlparser`
+
 pub mod errors;
 
 use sqlparser::ast::{
@@ -27,6 +29,7 @@ pub enum CompareOp {
     GtEq,
 }
 
+/// Literal as written in the SQL. Left unparsed since only bind knows the column type
 #[derive(Debug)]
 pub enum Literal {
     /// Numeric text, e.g. `"37500"`, `"-1.5"`.
@@ -37,24 +40,36 @@ pub enum Literal {
     Boolean(bool),
 }
 
+/// Columns a query returns
 #[derive(Debug)]
 pub enum Projection {
+    /// `SELECT *`
     All,
+    /// `SELECT a, b, ...`, in order
     Columns(Vec<String>),
 }
 
+/// `column op literal`. Filters in a [`Query`] are AND-ed together
 #[derive(Debug)]
 pub struct Filter {
+    /// Column name, not resolved yet
     pub column: String,
+    /// Comparison
     pub op: CompareOp,
+    /// Value to compare against
     pub value: Literal,
 }
 
+/// Single-table `SELECT` with names not resolved yet
 #[derive(Debug)]
 pub struct Query {
+    /// Table in `FROM`
     pub table: String,
+    /// `SELECT` list
     pub projection: Projection,
+    /// `WHERE` filters
     pub filters: Vec<Filter>,
+    /// `LIMIT n`
     pub limit: Option<u64>,
 }
 

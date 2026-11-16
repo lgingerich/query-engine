@@ -1,3 +1,5 @@
+//! Runs a sample query against the TPC-H data
+
 use std::path::Path;
 
 use sqlparser::dialect::GenericDialect;
