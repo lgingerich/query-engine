@@ -37,13 +37,11 @@ impl Session {
         let query = parse(sql)?;
         println!("{query:#?}");
 
-        // 2. ...
+        // 2. bind query
         
-        // 3. ...
+        // 3. plan query
         
-        // 4. ...
-
-
+        // 4. scan + execute
 
 
         Ok(QueryResult {

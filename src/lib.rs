@@ -1,4 +1,4 @@
-//! Analytical query engine.
+//! A columnar SQL query engine.
 
 pub mod errors;
 pub mod parquet;

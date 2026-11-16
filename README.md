@@ -1,6 +1,6 @@
 # query-engine
 
-An analytical query engine written from scratch. The goal is to learn and implement the big pieces of what make up a modern query engine, not to build the latest algorithms for micro-optimizations in query execution. Query performance benchmarks are run against Clickbench and TPC-H.
+A columnar/analytical query engine written from scratch. The goal is to learn and implement the big pieces of what make up a modern query engine, not to build the latest algorithms for micro-optimizations in query execution. Query performance benchmarks are run against Clickbench and TPC-H.
 
 The key pieces are:
 
