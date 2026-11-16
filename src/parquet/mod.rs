@@ -3,6 +3,7 @@
 pub mod errors;
 pub mod schema;
 
+use std::fmt;
 use std::fs::File;
 use std::path::Path;
 
@@ -12,7 +13,7 @@ use parquet::schema::types::SchemaDescriptor;
 
 use crate::parquet::errors::ParquetFileError;
 use crate::parquet::schema::convert_schema;
-use crate::schema::Schema;
+use crate::types::Schema;
 
 /*
 TODO: Handle data page v1 vs v2
@@ -23,6 +24,15 @@ TODO: Handle data page v1 vs v2
 pub struct ParquetSource {
     reader: SerializedFileReader<File>,
     schema: Schema,
+}
+
+impl fmt::Debug for ParquetSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ParquetSource")
+            .field("reader", &std::any::type_name_of_val(&self.reader))
+            .field("schema", &self.schema)
+            .finish()
+    }
 }
 
 impl ParquetSource {
