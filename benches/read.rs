@@ -76,12 +76,12 @@ fn main() -> Result<()> {
         .parse()
         .map_err(|err: std::num::ParseIntError| ParquetError::General(err.to_string()))?;
     if batch == 0 {
-        return Err(ParquetError::General("batch size must be > 0".into()));
+        return Err(ParquetError::General("batch size must be > 0".to_string()));
     }
     // The test runner appends `--bench` when `cargo bench` launches this target.
     let files = parquet_files(args.filter(|arg| arg != "--bench"))?;
     if files.is_empty() {
-        return Err(ParquetError::General("no parquet files".into()));
+        return Err(ParquetError::General("no parquet files".to_string()));
     }
 
     if mode == "schema" {
@@ -158,7 +158,7 @@ fn emit(line: &str) -> Result<()> {
 fn usage() -> ParquetError {
     ParquetError::General(
         "usage: cargo bench --features bench --bench read -- <encoded|plain|arrow|arrow-dict|arrow-view|schema> <batch_rows> [files-or-dirs...]"
-            .into(),
+            .to_string(),
     )
 }
 
@@ -230,7 +230,7 @@ macro_rules! read_phys {
         let slot = $columns[$idx].get_or_insert_with(|| Held::$variant(Vec::with_capacity($rows)));
         let Held::$variant(values) = slot else {
             return Err(ParquetError::General(
-                "physical type changed across row groups".into(),
+                "physical type changed across row groups".to_string(),
             ));
         };
         read_column(&mut $reader, $max_def, $batch, values)?
@@ -380,7 +380,7 @@ fn rewrite_schema(
     let ncols = meta.file_metadata().schema_descr().num_columns();
     if schema.fields().len() != ncols {
         return Err(ParquetError::NYI(
-            "schema rewrite expects one arrow field per physical column".into(),
+            "schema rewrite expects one arrow field per physical column".to_string(),
         ));
     }
     let mut rewritten = 0usize;

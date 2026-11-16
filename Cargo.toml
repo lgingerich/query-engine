@@ -15,6 +15,7 @@ bench = ["parquet/arrow", "dep:arrow-array", "dep:arrow-schema"]
 parquet = { version = "60.1.0", default-features = false, features = ["snap", "zstd"] }
 arrow-array = { version = "60.1.0", optional = true }
 arrow-schema = { version = "60.1.0", optional = true }
+thiserror = "2.0.21"
 
 [dev-dependencies]
 libc = "0.2"

@@ -8,7 +8,7 @@ pub enum Operations {
 
 #[derive(Debug)]
 pub struct Filter {
-    pub col: String,
+    pub col_name: String,
     pub op: Operations,
     pub val: i64,
 }
