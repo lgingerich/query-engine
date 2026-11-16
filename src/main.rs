@@ -1,7 +1,9 @@
 use std::path::Path;
 
+use sqlparser::dialect::GenericDialect;
+use sqlparser::parser::Parser;
+
 use query_engine::errors::EngineError;
-use query_engine::filters::{Filter, Operations};
 use query_engine::parquet::ParquetSource;
 
 /*
@@ -29,16 +31,23 @@ High-level architecture/flow
     start executing the query
     filtering + aggregation + etc.
 
+
+Various Notes
+- Projection = column pruning
+- Filtering = row pruning
 */
 
 fn main() -> Result<(), EngineError> {
     // Representative query for customer.parquet:
     // SELECT * FROM customer WHERE c_custkey <= 37500;
-    let filter = Filter {
-        col_name: "c_custkey".to_string(),
-        op: Operations::LTE,
-        val: 37_500,
-    };
+
+    let sql = "\
+        SELECT * FROM customer \
+        WHERE c_custkey <= 37500 \
+        LIMIT 5; \
+    ";
+    let query = query_engine::query::parse(sql)?;
+    println!("{query:?}");
 
     let path = Path::new("./tpch-data/customer.parquet");
     let source = ParquetSource::open(path)?;

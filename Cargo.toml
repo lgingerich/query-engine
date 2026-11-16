@@ -16,6 +16,7 @@ parquet = { version = "60.1.0", default-features = false, features = ["snap", "z
 arrow-array = { version = "60.1.0", optional = true }
 arrow-schema = { version = "60.1.0", optional = true }
 thiserror = "2.0.21"
+sqlparser = "0.64.0"
 
 [dev-dependencies]
 libc = "0.2"

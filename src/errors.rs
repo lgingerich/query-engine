@@ -2,8 +2,8 @@
 
 use thiserror::Error;
 
-// use crate::filters::BindError;
 use crate::parquet::errors::ParquetFileError;
+use crate::query::errors::QueryError;
 
 /// Any error the engine can return.
 #[derive(Debug, Error)]
@@ -11,9 +11,9 @@ pub enum EngineError {
     /// Reading a Parquet file failed.
     #[error(transparent)]
     Parquet(#[from] ParquetFileError),
-    // /// A filter didn't match the table's schema.
-    // #[error(transparent)]
-    // Bind(#[from] BindError),
+    /// SQL couldn't be parsed or isn't supported.
+    #[error(transparent)]
+    Query(#[from] QueryError),
     /// I/O outside a specific source, e.g. writing results.
     #[error(transparent)]
     Io(#[from] std::io::Error),
