@@ -8,18 +8,16 @@ readme = "README.md"
 repository = "https://github.com/lgingerich/query-engine"
 license = "MIT"
 
-[features]
-bench = ["parquet/arrow", "dep:arrow-array", "dep:arrow-schema"]
-
 [dependencies]
-parquet = { version = "60.1.0", default-features = false, features = ["snap", "zstd"] }
-arrow-array = { version = "60.1.0", optional = true }
-arrow-schema = { version = "60.1.0", optional = true }
+parquet = { version = "60.1.0", default-features = false, features = ["snap"] }
 thiserror = "2.0.21"
 sqlparser = "0.64.0"
 
 [dev-dependencies]
+arrow-schema = "60.1.0"
 libc = "0.2"
+# Benchmarks compare against the parquet crate's Arrow reader
+parquet = { version = "60.1.0", default-features = false, features = ["snap", "arrow"] }
 
 [[bench]]
 name = "limits"
@@ -30,7 +28,6 @@ path = "benches/limits.rs"
 name = "read"
 harness = false
 path = "benches/read.rs"
-required-features = ["bench"]
 
 [profile.release]
 codegen-units = 1

@@ -18,7 +18,7 @@
 //! Run one file and one mode per process when comparing memory.
 //!
 //! ```text
-//! cargo bench --features bench --bench read -- arrow 65536 tpch-data/lineitem.parquet
+//! cargo bench --bench read -- arrow 65536 tpch-data/lineitem.parquet
 //! ```
 
 use std::fs::File;
@@ -157,7 +157,7 @@ fn emit(line: &str) -> Result<()> {
 
 fn usage() -> ParquetError {
     ParquetError::General(
-        "usage: cargo bench --features bench --bench read -- <encoded|plain|arrow|arrow-dict|arrow-view|schema> <batch_rows> [files-or-dirs...]"
+        "usage: cargo bench --bench read -- <encoded|plain|arrow|arrow-dict|arrow-view|schema> <batch_rows> [files-or-dirs...]"
             .to_string(),
     )
 }
