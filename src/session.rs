@@ -1,15 +1,24 @@
 //! Registered tables and the entry point for running SQL
 
-use crate::{errors::EngineError, parquet::ParquetSource};
+use crate::bind::bind;
 use crate::query::parse;
 use crate::types::{Batch, Schema};
+use crate::{errors::EngineError, parquet::ParquetSource};
 use std::collections::HashMap;
 
 /// Output of a query: its schema and all result batches
 #[derive(Debug)]
 pub struct QueryResult {
     schema: Schema,
-    results: Vec<Batch>
+    results: Vec<Batch>,
+}
+
+impl QueryResult {
+    /// Total rows across all result batches
+    #[must_use]
+    pub fn num_rows(&self) -> usize {
+        self.results.iter().map(Batch::num_rows).sum()
+    }
 }
 
 /// Tables registered by name
@@ -50,14 +59,22 @@ impl Session {
     pub fn execute(&self, sql: &str) -> Result<QueryResult, EngineError> {
         // 1. parse query
         let query = parse(sql)?;
-        println!("{query:#?}");
+        println!("query={query:#?}");
+        println!("session tables={:#?}", self.tables);
 
-        // 2. bind query
+        // 2. bind query        
         
+        // verify query tables exist in session table names
+        let source = self.tables.get(&query.table)
+          .ok_or_else(|| EngineError::TableNotFound(query.table.clone()))?;
+
+        // bind query -> check validity of projections/filters, bind filters with literal values, convert column names to indexes
+        let bound_query = bind(query, &source.schema())?;
+        println!("bound_query={bound_query:#?}");
+
         // 3. plan query
-        
-        // 4. scan + execute
 
+        // 4. scan + execute
 
         Ok(QueryResult {
             schema: Schema::new(Vec::new()),

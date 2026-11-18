@@ -1,7 +1,9 @@
 //! A columnar SQL query engine.
 
+mod bind;
 pub mod errors;
 pub mod parquet;
-pub mod query;
+mod query;
 pub mod session;
 pub mod types;
+mod utils;

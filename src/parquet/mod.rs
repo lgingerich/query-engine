@@ -1,7 +1,7 @@
 //! Parquet table source
 
-pub mod errors;
-pub mod schema;
+pub(crate) mod errors;
+mod schema;
 
 use std::fmt;
 use std::fs::File;

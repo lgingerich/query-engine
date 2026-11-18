@@ -2,8 +2,9 @@
 
 use thiserror::Error;
 
-use crate::parquet::errors::ParquetFileError;
-use crate::query::errors::QueryError;
+pub use crate::bind::errors::BindError;
+pub use crate::parquet::errors::ParquetFileError;
+pub use crate::query::errors::QueryError;
 
 /// Any error the engine can return.
 #[derive(Debug, Error)]
@@ -14,6 +15,9 @@ pub enum EngineError {
     /// SQL couldn't be parsed or isn't supported.
     #[error(transparent)]
     Query(#[from] QueryError),
+    /// Query doesn't match the table: unknown column or type error
+    #[error(transparent)]
+    Bind(#[from] BindError),
     /// No table registered under this name
     #[error("table `{0}` not found")]
     TableNotFound(String),

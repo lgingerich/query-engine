@@ -45,8 +45,9 @@ fn main() -> Result<(), EngineError> {
 
     // Build and execute query
     let sql = "\
-        SELECT * FROM customer \
+        SELECT c_custkey, c_name FROM customer \
         WHERE c_custkey <= 37500 \
+        AND c_nationkey > 5 \
         LIMIT 5; \
     ";
     let results = session.execute(sql)?; // mock api method

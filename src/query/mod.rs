@@ -1,6 +1,6 @@
 //! SQL text -> engine [`Query`]. Only module that touches `sqlparser`
 
-pub mod errors;
+pub(crate) mod errors;
 
 use sqlparser::ast::{
     BinaryOperator, DataType as SqlType, Expr, LimitClause, SelectItem, SetExpr, Statement,
@@ -15,7 +15,7 @@ const DIALECT: GenericDialect = GenericDialect {};
 
 /// Comparison operators
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CompareOp {
+pub(crate) enum CompareOp {
     /// `=`
     Eq,
     /// `<>` / `!=`
@@ -32,7 +32,7 @@ pub enum CompareOp {
 
 /// Literal as written in the SQL. Left unparsed since only bind knows the column type
 #[derive(Debug)]
-pub enum Literal {
+pub(crate) enum Literal {
     /// Numeric text, e.g. `"37500"`, `"-0.05"`. Compared with `Int32`, `Int64`,
     /// and `Decimal` columns
     Number(String),
@@ -44,7 +44,7 @@ pub enum Literal {
 
 /// Columns a query returns
 #[derive(Debug)]
-pub enum Projection {
+pub(crate) enum Projection {
     /// `SELECT *`
     All,
     /// `SELECT a, b, ...`, in order
@@ -53,7 +53,7 @@ pub enum Projection {
 
 /// `column op literal`. Filters in a [`Query`] are AND-ed together
 #[derive(Debug)]
-pub struct Filter {
+pub(crate) struct Filter {
     /// Column name, not resolved yet
     pub column: String,
     /// Comparison
@@ -64,7 +64,7 @@ pub struct Filter {
 
 /// Single-table `SELECT` with names not resolved yet
 #[derive(Debug)]
-pub struct Query {
+pub(crate) struct Query {
     /// Table in `FROM`
     pub table: String,
     /// `SELECT` list
@@ -80,7 +80,7 @@ pub struct Query {
 /// # Errors
 ///
 /// Invalid SQL, or SQL outside the supported subset.
-pub fn parse(sql: &str) -> Result<Query, QueryError> {
+pub(crate) fn parse(sql: &str) -> Result<Query, QueryError> {
     let statements = Parser::parse_sql(&DIALECT, sql)?;
     statements
         .first()
