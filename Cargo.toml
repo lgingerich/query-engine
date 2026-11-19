@@ -14,10 +14,25 @@ thiserror = "2.0.21"
 sqlparser = "0.64.0"
 
 [dev-dependencies]
-arrow-schema = "60.1.0"
-libc = "0.2"
-# Benchmarks compare against the parquet crate's Arrow reader
-parquet = { version = "60.1.0", default-features = false, features = ["snap", "arrow"] }
+# Reference engine for the `query` and `heap` benches. `benches/bounds` and its
+# tests (`tests/bounds`) use its planner and Parquet reader
+datafusion = "55.2.0"
+# Per-call-site heap profiles, `benches/heap.rs`
+dhat = "0.3.3"
+# Draining DataFusion's record batch streams in `benches/bounds`
+futures = "0.3.34"
+# Runtime for DataFusion in the benches and `tests/bounds`
+tokio = { version = "1.54.1", features = ["rt-multi-thread"] }
+
+[[bench]]
+name = "bounds"
+harness = false
+path = "benches/bounds/main.rs"
+
+[[bench]]
+name = "heap"
+harness = false
+path = "benches/heap.rs"
 
 [[bench]]
 name = "limits"
@@ -25,9 +40,9 @@ harness = false
 path = "benches/limits.rs"
 
 [[bench]]
-name = "read"
+name = "query"
 harness = false
-path = "benches/read.rs"
+path = "benches/query.rs"
 
 [profile.release]
 codegen-units = 1
@@ -43,6 +58,18 @@ inherits = "release"
 debug = "line-tables-only"
 strip = "none"
 
+# Cargo's built-in profile for `cargo bench`, which `scripts/perf` uses by default.
+# Fat LTO with one codegen unit re-optimizes every crate in the binary on each
+# link, DataFusion included, so a one-line bench change costs ~10 min. Thin LTO
+# links in parallel and reuses earlier work. Use `release-profiling` for numbers
+# that should match a release build. Line tables keep samply and dhat backtraces
+# readable.
+[profile.bench]
+codegen-units = 16
+debug = "line-tables-only"
+lto = "thin"
+strip = "none"
+
 [profile.dev]
 codegen-units = 256
 debug = 2
@@ -52,6 +79,11 @@ opt-level = 0
 lto = false
 panic = "unwind"
 strip = false
+
+# Dependencies build without debug info: about 20% smaller debug builds at no build-time
+# cost. This workspace's own crates keep full debug info for backtraces and debuggers.
+[profile.dev.package."*"]
+debug = false
 
 [lints.rust]
 # Levels: `deny` fails every build, for code that is unsound or definitely wrong.

@@ -2,14 +2,17 @@
 //!
 //! * `read_file` — read the whole file sequentially into one reused buffer.
 //!   When the file is warm this measures the OS page cache, not the disk; clear
-//!   the cache first (`purge` on macOS, `drop_caches` on Linux) for the disk.
+//!   the cache first (`sudo purge` on macOS, `drop_caches` on Linux) for the disk.
 //! * `sum_1thread` — sum a 1 GiB `u64` array on one thread: memory bandwidth
 //!   for one core.
 //! * `sum_all_threads` — the same sum split into one disjoint slice per
 //!   available core, all at once: total memory bandwidth.
 //!
-//! Each prints min and median over several runs as `key=value` pairs. GB/s is
-//! 10^9 bytes per second.
+//! Prints TSV on stdout: a header, then one row per measure with min and
+//! median over several runs. GB/s is 10^9 bytes per second. Progress goes to
+//! stderr. `docs/BENCHMARKING.md` covers how to use the numbers.
+//!
+//! Usually run through `scripts/perf limits`. Directly:
 //!
 //! ```text
 //! cargo bench --bench limits -- clickbench-data/partitioned/hits_0.parquet
@@ -23,6 +26,7 @@ use std::time::{Duration, Instant};
 const RUNS: usize = 5;
 const READ_BUFFER_BYTES: usize = 8 << 20;
 const ARRAY_BYTES: usize = 1 << 30;
+const MEASURES: usize = 3;
 
 fn main() -> io::Result<()> {
     // `cargo nextest` lists tests with `--list`; this target has none.
@@ -35,9 +39,13 @@ fn main() -> io::Result<()> {
         .find(|arg| arg != "--bench")
         .ok_or_else(|| io::Error::other("usage: cargo bench --bench limits -- <file>"))?;
     let mut out = io::stdout().lock();
-    writeln!(out, "optimized={}", !cfg!(debug_assertions))?;
-    writeln!(out, "runs={RUNS}")?;
+    let mut log = io::stderr().lock();
+    writeln!(
+        out,
+        "measure\tdetail\tbytes\truns\tmin_ms\tmedian_ms\tbest_gbps\tmedian_gbps"
+    )?;
 
+    writeln!(log, "[1/{MEASURES}] read_file: {path}, {RUNS} runs")?;
     let file_bytes = std::fs::metadata(&path)?.len();
     let mut buffer = vec![0u8; READ_BUFFER_BYTES];
     let mut failed = None;
@@ -49,24 +57,30 @@ fn main() -> io::Result<()> {
     if let Some(err) = failed {
         return Err(err);
     }
-    writeln!(
-        out,
-        "measure=read_file file={path} {}",
-        rates(file_bytes, &read)
-    )?;
-    writeln!(
-        out,
-        "note=read_file measures the OS page cache when the file is warm"
+    report(
+        &mut out,
+        &mut log,
+        "read_file",
+        "page cache if warm",
+        file_bytes,
+        &read,
     )?;
 
+    writeln!(
+        log,
+        "[2/{MEASURES}] sum_1thread: filling 1 GiB, then {RUNS} runs"
+    )?;
     // `vec![1; n]` writes every element, so all pages are resident before timing.
     let data = vec![1u64; ARRAY_BYTES / size_of::<u64>()];
     let bytes = u64::try_from(ARRAY_BYTES).unwrap_or(u64::MAX);
-
     let one = time_runs(RUNS, || sum(black_box(&data)));
-    writeln!(out, "measure=sum_1thread {}", rates(bytes, &one))?;
+    report(&mut out, &mut log, "sum_1thread", "threads=1", bytes, &one)?;
 
     let threads = std::thread::available_parallelism()?.get();
+    writeln!(
+        log,
+        "[3/{MEASURES}] sum_all_threads: {threads} threads, {RUNS} runs"
+    )?;
     let chunk = data.len().div_ceil(threads);
     // Thread spawn and join are inside the timed region; at 1 GiB they are small next to the sum.
     let all = time_runs(RUNS, || {
@@ -76,13 +90,34 @@ fn main() -> io::Result<()> {
             }
         });
     });
-    writeln!(
-        out,
-        "measure=sum_all_threads threads={threads} {}",
-        rates(bytes, &all)
-    )?;
+    let detail = format!("threads={threads}");
+    report(&mut out, &mut log, "sum_all_threads", &detail, bytes, &all)?;
 
     Ok(())
+}
+
+/// Writes one TSV row to `out` and its headline to `log`
+fn report(
+    out: &mut impl Write,
+    log: &mut impl Write,
+    measure: &str,
+    detail: &str,
+    bytes: u64,
+    timings: &Timings,
+) -> io::Result<()> {
+    let (best, median) = (gbps(bytes, timings.min()), gbps(bytes, timings.median()));
+    writeln!(
+        out,
+        "{measure}\t{detail}\t{bytes}\t{}\t{:.3}\t{:.3}\t{best:.2}\t{median:.2}",
+        timings.0.len(),
+        millis(timings.min()),
+        millis(timings.median()),
+    )?;
+    writeln!(
+        log,
+        "      {measure}: median {median:.1} GB/s, best {best:.1} GB/s"
+    )?;
+    out.flush()
 }
 
 /// Durations of repeated runs, sorted fastest first.
@@ -130,16 +165,6 @@ fn read_whole(path: &str, buffer: &mut [u8]) -> io::Result<u64> {
 
 fn sum(values: &[u64]) -> u64 {
     values.iter().copied().fold(0, u64::wrapping_add)
-}
-
-fn rates(bytes: u64, timings: &Timings) -> String {
-    format!(
-        "bytes={bytes} min_ms={:.3} median_ms={:.3} max_gbps={:.2} median_gbps={:.2}",
-        millis(timings.min()),
-        millis(timings.median()),
-        gbps(bytes, timings.min()),
-        gbps(bytes, timings.median()),
-    )
 }
 
 fn millis(duration: Duration) -> f64 {

@@ -1,0 +1,405 @@
+#!/usr/bin/env bash
+# One entry point for benchmarks and profiles. Run `scripts/perf help`.
+#
+# Everything builds with Cargo's `bench` profile (thin LTO plus line tables, see
+# Cargo.toml), so one build serves timings, CPU profiles, and heap profiles.
+# PROFILE=release-profiling gives fat-LTO numbers that match a release build.
+#
+# `run` and `bounds` start a fresh process for each query, so no query sees
+# another's caches, allocator state, or metrics.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+PROFILE=${PROFILE:-bench}
+RESULTS=bench-results
+DH_VIEW=https://nnethercote.github.io/dh_view/dh_view.html
+
+# Engine under test. DataFusion until this engine runs queries end to end
+ENGINE=${ENGINE:-datafusion}
+# Empty = all cores. Only DataFusion uses it
+THREADS=${THREADS:-}
+
+usage() {
+    cat <<'EOF'
+usage: [ENGINE=ours|datafusion] [THREADS=n] [PROFILE=bench|release-profiling] scripts/perf <command> [args]
+
+  run <suite> [query]               time queries, count allocations, save a result file
+  profile <suite> <query> [secs]    loop one query (default 5 s) under samply, open the flamegraph
+  heap <suite> <query> [runs]       dhat heap profile of one query (default 1 run), open the viewer
+  compare [old.tsv new.tsv]         % change per query; default: the two newest runs of one suite+engine
+  limits [file]                     hardware ceilings: file read, memory bandwidth; save a result file
+                                    (file defaults to the ClickBench file)
+  bounds <suite> [query]            least work each query needs on these files (needs duckdb); a full
+                                    run of tpch or clickbench-full rewrites benches/reference/bounds/<dataset>.tsv
+
+suites: clickbench (q00-q42 on 1M rows), clickbench-full (the same on 100M rows), tpch (q01-q22).
+Details: docs/BENCHMARKING.md
+ENGINE defaults to datafusion. THREADS defaults to all cores.
+PROFILE defaults to bench (thin LTO, quick to rebuild); release-profiling is fat LTO.
+EOF
+}
+
+die() {
+    echo "perf: $*" >&2
+    exit 1
+}
+
+# Progress message, on stderr so it never mixes with results
+say() {
+    echo "==> $*" >&2
+}
+
+# Warns when the machine is in a state that skews timings. Low Power Mode
+# roughly halves memory bandwidth on this Mac, and battery power can throttle
+warn_power() {
+    command -v pmset >/dev/null || return 0
+    if pmset -g | grep -q -E '^ *(lowpowermode|powermode) +1'; then
+        say "WARNING: Low Power Mode is on; timings and bandwidth will be much lower"
+    fi
+    if pmset -g batt | grep -q "Battery Power"; then
+        say "WARNING: running on battery; plug in for comparable timings"
+    fi
+}
+
+# Prints the path of the built bench binary `$1`
+build() {
+    if [ "$PROFILE" = bench ]; then
+        say "building $1 bench (instant if cached, minutes after a code change)"
+    else
+        say "building $1 bench with $PROFILE (instant if cached; fat LTO makes relinks much slower)"
+    fi
+    cargo bench --quiet --profile "$PROFILE" --bench "$1" --no-run --message-format=json-render-diagnostics |
+        jq -r --arg name "$1" \
+            'select(.reason == "compiler-artifact" and .target.name == $name and .executable != null) | .executable'
+}
+
+# Sets BENCH_ARGS to the bench arguments for suite `$1` with ENGINE and THREADS,
+# and QUERY_DIR to the suite's queries
+bench_args() {
+    case "$1" in
+        clickbench | clickbench-full)
+            # clickbench: the first of the 100 partitions (1M rows), quick to run.
+            # clickbench-full: the official single file (100M rows)
+            local hits=clickbench-data/partitioned/hits_0.parquet
+            if [ "$1" = clickbench-full ]; then
+                hits=clickbench-data/hits.parquet
+            fi
+            [ -f "$hits" ] || die "missing $hits"
+            QUERY_DIR=benches/queries/clickbench
+            if [ "$ENGINE" = datafusion ]; then
+                # `hits` is a view over `hits_raw` that fixes `EventDate`'s type
+                BENCH_ARGS=(--table "hits_raw=$hits" --setup benches/queries/setup/clickbench-datafusion.sql)
+            else
+                BENCH_ARGS=(--table "hits=$hits")
+            fi
+            ;;
+        tpch)
+            [ -d tpch-data ] || die "missing tpch-data/"
+            QUERY_DIR=benches/queries/tpch
+            BENCH_ARGS=()
+            local file
+            for file in tpch-data/*.parquet; do
+                BENCH_ARGS+=(--table "$(basename "$file" .parquet)=$file")
+            done
+            ;;
+        *) die "unknown suite \`$1\` (clickbench, clickbench-full, tpch)" ;;
+    esac
+    BENCH_ARGS+=(--queries "$QUERY_DIR" --engine "$ENGINE")
+    if [ -n "$THREADS" ]; then
+        BENCH_ARGS+=(--threads "$THREADS")
+    fi
+}
+
+# Engine plus thread count and any non-default profile, e.g. `datafusion`,
+# `datafusion-t1`, `datafusion-release-profiling`
+label() {
+    local profile=
+    [ "$PROFILE" = bench ] || profile="-$PROFILE"
+    echo "$ENGINE${THREADS:+-t$THREADS}$profile"
+}
+
+# `20261117-090100-cabbf72`, plus `-dirty` with uncommitted changes, new files included
+stamp() {
+    local rev
+    rev=$(git rev-parse --short HEAD)
+    [ -z "$(git status --porcelain)" ] || rev="$rev-dirty"
+    echo "$(date +%Y%m%d-%H%M%S)-$rev"
+}
+
+# Runs bench binary `$1` once per query of the suite (`QUERY_DIR`), each in a
+# fresh process, or only query `$2` if given. Further arguments go to every
+# run. Prints the binary's TSV header once, then each query's rows
+each_query() {
+    local bin=$1 only=$2
+    shift 2
+    local names=() file
+    for file in "$QUERY_DIR"/*.sql; do
+        names+=("$(basename "$file" .sql)")
+    done
+    if [ -n "$only" ]; then
+        [ -f "$QUERY_DIR/$only.sql" ] || die "no query \`$only\` in $QUERY_DIR"
+        names=("$only")
+    fi
+    local i=0 name
+    for name in "${names[@]}"; do
+        i=$((i + 1))
+        # `|| return`: callers may run this as an `if` condition, where `set -e` is off
+        "$bin" "${BENCH_ARGS[@]}" --only "$name" --position "$i/${#names[@]}" "$@" |
+            if [ "$i" -eq 1 ]; then cat; else tail -n +2; fi || return
+    done
+}
+
+# Aligns TSV on stdin into columns
+table() {
+    column -t -s "$(printf '\t')"
+}
+
+cmd_run() {
+    [ $# -ge 1 ] || die "usage: scripts/perf run <suite> [query]"
+    bench_args "$1"
+    local bin
+    bin=$(build query)
+    local dir
+    dir="$RESULTS/$1/$(label)"
+    mkdir -p "$dir"
+    local out
+    out="$dir/$(stamp).tsv"
+
+    warn_power
+    say "running $1 on $(label), one process per query"
+    each_query "$bin" "${2:-}" >"$out"
+    table <"$out"
+    echo
+    echo "saved $out"
+}
+
+cmd_profile() {
+    [ $# -ge 2 ] || die "usage: scripts/perf profile <suite> <query> [seconds]"
+    command -v samply >/dev/null || die "samply not installed (cargo install samply)"
+    bench_args "$1"
+    local bin
+    bin=$(build query)
+    mkdir -p "$RESULTS/profiles"
+    local out
+    out="$RESULTS/profiles/$1-$2-$(label)-$(stamp).json.gz"
+    warn_power
+    say "profiling $1 $2 on $(label) for ${3:-5} s; samply opens the flamegraph when done"
+    say "saving to $out (reopen later with: samply load $out)"
+    samply record -o "$out" -- "$bin" "${BENCH_ARGS[@]}" --only "$2" --seconds "${3:-5}"
+}
+
+cmd_heap() {
+    [ $# -ge 2 ] || die "usage: scripts/perf heap <suite> <query> [runs]"
+    bench_args "$1"
+    local bin
+    bin=$(build heap)
+    mkdir -p "$RESULTS/heap"
+    local out
+    out="$RESULTS/heap/$1-$2-$(label)-$(stamp).json"
+
+    local runs=${3:-1}
+    if [ "$PROFILE" != bench ]; then
+        say "WARNING: with fat LTO, frames often show the wrong file (function names and lines stay right)"
+    fi
+    say "heap profiling $1 $2 on $(label): warmup + $runs run(s)"
+    say "dhat records a backtrace per allocation, so this is slow: TPC-H q06 takes about 8 s per run"
+    rm -f dhat-heap.json
+    "$bin" "${BENCH_ARGS[@]}" --only "$2" --runs "$runs"
+    # Line 0 means the compiler recorded no location, so the file shown with it
+    # is arbitrary and often misleading. Keep the function name, drop the file
+    jq -c '.ftbl |= map(sub("\\([^()]*:0:0\\)$"; "(no line info)"))' dhat-heap.json >"$out"
+    rm dhat-heap.json
+    cat <<EOF
+
+saved $out
+
+Opening the viewer; the file's full path is on your clipboard. In the viewer:
+  1. Click "Load…" at the top. In the file picker press Cmd+Shift+G, paste, press Return twice.
+     The viewer runs in your browser; the file is not uploaded.
+  2. "Sort metric" picks what to rank by: Total (bytes), Total (blocks), At t-gmax (bytes).
+  3. Expand an entry to see its call stack. The top entries are the biggest allocation sites.
+EOF
+    printf '%s' "$PWD/$out" | pbcopy
+    open "$DH_VIEW"
+}
+
+cmd_limits() {
+    local file=${1:-clickbench-data/partitioned/hits_0.parquet}
+    [ -f "$file" ] || die "missing $file"
+    local bin
+    bin=$(build limits)
+    mkdir -p "$RESULTS/limits"
+    local out
+    out="$RESULTS/limits/$(stamp).tsv"
+
+    warn_power
+    say "measuring hardware limits with $file"
+    "$bin" "$file" >"$out"
+    table <"$out"
+    echo
+    echo "saved $out"
+}
+
+# Sets DATASET (e.g. tpch-sf1) and DATA_SOURCE (how the files were made) for suite `$1`
+dataset_of() {
+    case "$1" in
+        tpch)
+            local rows sf
+            rows=$(duckdb -noheader -csv -c "SELECT count(*) FROM 'tpch-data/lineitem.parquet'") ||
+                die "duckdb couldn't count tpch-data/lineitem.parquet"
+            # lineitem has about 6 million rows per scale factor
+            sf=$(awk -v r="$rows" 'BEGIN { printf "%g", int(r / 6e6 * 10 + 0.5) / 10 }')
+            DATASET="tpch-sf$sf"
+            DATA_SOURCE="tpchgen-cli --scale-factor $sf --format parquet --parquet-compression='ZSTD(1)'"
+            ;;
+        clickbench)
+            DATASET=clickbench-hits0
+            DATA_SOURCE=https://datasets.clickhouse.com/hits_compatible/athena_partitioned/hits_0.parquet
+            ;;
+        clickbench-full)
+            DATASET=clickbench-full
+            DATA_SOURCE=https://datasets.clickhouse.com/hits_compatible/hits.parquet
+            ;;
+    esac
+}
+
+# `#` header lines recording exactly which files the bounds describe
+provenance() {
+    dataset_of "$1"
+    echo "# dataset: $DATASET"
+    echo "# data: $DATA_SOURCE"
+    local spec file
+    for spec in "${BENCH_ARGS[@]}"; do
+        case "$spec" in
+            *=*.parquet)
+                file=${spec#*=}
+                echo "# file: $(basename "$file") $(wc -c <"$file" | tr -d ' ') bytes, sha256 $(shasum -a 256 <"$file" | cut -c1-16)"
+                ;;
+        esac
+    done
+    echo "# columns: docs/BENCHMARKING.md, section Bounds"
+}
+
+# Shows the main bounds columns, in MB, from a bounds TSV on stdin
+bounds_table() {
+    grep -v '^#' | awk -F '\t' -v OFS='\t' '
+        function mb(v) { return v == "-" ? "-" : sprintf("%.1f", v / 1e6) }
+        function of(kept, all) { return all == "-" ? "-" : kept "/" all }
+        NR == 1 {
+            for (i = 1; i <= NF; i++) c[$i] = i
+            print "query", "table", "filters", "row_groups", "pages", "proj_MB", "reach_MB", "late_MB", "oracle_MB", "matching", "sel_%", "output", "groups", "df_rg_pruned", "duckdb"
+            next
+        }
+        {
+            filters = $c["filters"]
+            if ($c["unusable"] > 0) filters = filters " (" $c["unusable"] " unusable)"
+            print $c["query"], $c["table"], filters, of($c["rg_kept"], $c["row_groups"]), of($c["pages_kept"], $c["pages"]),
+                mb($c["proj_bytes"]), mb($c["reach_bytes"]), mb($c["late_bytes"]), mb($c["oracle_bytes"]),
+                $c["matching"], $c["selectivity_pct"], $c["output_rows"], $c["groups"], $c["df_rg_pruned"], $c["duckdb"]
+        }' | table
+}
+
+cmd_bounds() {
+    [ $# -ge 1 ] || die "usage: scripts/perf bounds <suite> [query]"
+    # DataFusion plans the queries and runs them for the cross-checks
+    ENGINE=datafusion
+    bench_args "$1"
+    command -v duckdb >/dev/null || die "duckdb not installed; bounds need its cross-checks"
+    local duckdb_setup=
+    case "$1" in
+        clickbench*) duckdb_setup=benches/queries/setup/clickbench-duckdb.sql ;;
+    esac
+    local bin out
+    bin=$(build bounds)
+    # Committed bounds are for the reference datasets only. The small clickbench
+    # suite is for fast iteration; its 2 row groups make its bounds unrepresentative
+    if [ $# -ge 2 ] || [ "$1" = clickbench ]; then
+        mkdir -p "$RESULTS/bounds"
+        out="$RESULTS/bounds/$1${2:+-$2}-$(stamp).tsv"
+    else
+        dataset_of "$1"
+        mkdir -p benches/reference/bounds
+        out="benches/reference/bounds/$DATASET.tsv"
+    fi
+
+    say "computing bounds for $1${2:+ $2}, one process per query"
+    local tmp
+    tmp=$(mktemp)
+    if ! { provenance "$1" && each_query "$bin" "${2:-}" ${duckdb_setup:+--duckdb-setup "$duckdb_setup"}; } >"$tmp"; then
+        rm -f "$tmp"
+        die "bounds failed; $out is unchanged"
+    fi
+    # mktemp makes the file private; give it the repository's usual mode
+    chmod 644 "$tmp"
+    mv "$tmp" "$out"
+    bounds_table <"$out"
+    echo
+    echo "saved $out"
+    if [[ $out == benches/reference/* ]]; then
+        git diff --stat -- "$out"
+    fi
+    # The bench also writes each warning into the file as a `# warning:` line
+    if grep -q '^# warning:' "$out"; then
+        echo
+        echo "WARNINGS, also kept in $out (check them before committing):"
+        grep '^# warning:' "$out"
+    fi
+}
+
+cmd_compare() {
+    local old new
+    if [ $# -eq 2 ]; then
+        old=$1
+        new=$2
+    elif [ $# -eq 0 ]; then
+        # shellcheck disable=SC2012 # names are ours: no spaces or newlines
+        new=$(ls -t "$RESULTS"/*/*/*.tsv 2>/dev/null | head -n 1)
+        [ -n "$new" ] || die "no saved runs in $RESULTS/"
+        # shellcheck disable=SC2012
+        old=$(ls -t "$(dirname "$new")"/*.tsv | sed -n 2p)
+        [ -n "$old" ] || die "only one saved run in $(dirname "$new")"
+    else
+        die "usage: scripts/perf compare [old.tsv new.tsv]"
+    fi
+
+    echo "old: $old"
+    echo "new: $new"
+    echo
+    # `check` flags a query whose status or row count changed: a speedup
+    # that returns different rows is a bug, not a win
+    awk -F '\t' -v OFS='\t' '
+        FNR == 1 { delete col; for (i = 1; i <= NF; i++) col[$i] = i; next }
+        FILENAME == ARGV[1] {
+            ms[$1] = $col["median_ms"]; allocs[$1] = $col["allocs"]; mib[$1] = $col["alloc_mib"]
+            rows[$1] = $col["rows"]; status[$1] = $col["status"]
+            next
+        }
+        FNR == 2 { print "query", "old_ms", "new_ms", "time", "old_allocs", "new_allocs", "old_mib", "new_mib", "check" }
+        {
+            q = $1
+            check = "ok"
+            if (!(q in status)) check = "new query"
+            else if (status[q] != $col["status"]) { check = "STATUS " status[q] "->" $col["status"]; changed++ }
+            else if (rows[q] != $col["rows"]) { check = "ROWS " rows[q] "->" $col["rows"]; changed++ }
+            print q, or_dash(ms[q]), $col["median_ms"], change(ms[q], $col["median_ms"]),
+                or_dash(allocs[q]), $col["allocs"], or_dash(mib[q]), $col["alloc_mib"], check
+        }
+        END { if (changed) printf "\n%d queries changed status or row count\n", changed > "/dev/stderr" }
+        function or_dash(v) { return v == "" ? "-" : v }
+        function change(a, b) {
+            if (a == "" || a == "-" || b == "-" || a + 0 == 0) return "-"
+            return sprintf("%+.1f%%", (b - a) / a * 100)
+        }
+    ' "$old" "$new" | table
+}
+
+case "${1:-help}" in
+    run) shift; cmd_run "$@" ;;
+    profile) shift; cmd_profile "$@" ;;
+    heap) shift; cmd_heap "$@" ;;
+    compare) shift; cmd_compare "$@" ;;
+    limits) shift; cmd_limits "$@" ;;
+    bounds) shift; cmd_bounds "$@" ;;
+    help | -h | --help) usage ;;
+    *) usage >&2; exit 1 ;;
+esac

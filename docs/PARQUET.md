@@ -140,4 +140,20 @@ The values themselves, not a statistic record. When the chunk is entirely dictio
 
 ## What these files have
 
-On `hits_0`, all 210 column chunks have min, max, and null count, and none have a distinct count. The bounds are the new `min_value` / `max_value` fields. Every byte-array bound is marked inexact. The other types are exact. There is no bloom filter and no page index. The page headers checked so far (`EventDate`, `AdvEngineID`, `URL`) carry no statistics. The footer is the only statistic these files offer.
+**TPC-H** (`tpchgen-cli`, `ZSTD(1)`, written by parquet-rs): every column chunk has a column index and an offset index, so per-page min/max and page locations are available. No bloom filters. `lineitem` has 53 row groups of about 113k rows, and about 6 data pages of about 19k rows per column chunk. Rows are in key order (`l_orderkey`), and dates are spread across keys, so every row group and every page spans the whole 1992-1998 date range: date filters prune nothing. Decimals are `INT64` at scale 2 and dates are `INT32` days, with exact statistics. Dictionary pages can be large: `l_extendedprice` has 18 MB of dictionary against 12 MB of data pages. The offset index lists only data pages.
+
+**ClickBench** (`hits_0`, parquet-cpp 1.5.1, Snappy): 2 row groups (450,560 and 549,440 rows). On `hits_0`, all 210 column chunks have min, max, and null count, and none have a distinct count. The bounds are the new `min_value` / `max_value` fields. Every byte-array bound is marked inexact. The other types are exact. There is no bloom filter and no page index. The page headers checked so far (`EventDate`, `AdvEngineID`, `URL`) carry no statistics. The footer is the only statistic these files offer.
+
+## Footer cost
+
+Measured 2026-11-13 with the `parquet` crate 60.1.0. Cold read is `open` plus the 8-byte tail plus the footer bytes, one shot after `sudo purge`. Warm columns are the median of 5 cached runs, ignoring the first. Parse is `ParquetMetaDataReader::decode_metadata` on those bytes; open+parse is `parse_and_finish`, what a normal open does. The parser was already resident, so the cold parse is decode time, not code being faulted back in. None of these files has a page index.
+
+| File | Footer | Cold read | Cold parse | Warm read | Warm parse | Warm open+parse |
+|---|---|---|---|---|---|---|
+| `hits_0.parquet` | 23,946 B | 0.49 ms | 0.08 ms | 0.02 ms | 0.07 ms | 0.08 ms |
+| `hits.parquet` | 2,439,316 B | 1.0 ms | 6.6 ms | 0.44 ms | 5.8 ms | 6.7 ms |
+| 100 partitions | 3,683,826 B | 39 ms | 11 ms | 2.0 ms | 11 ms | 13 ms |
+
+Partition footers range from 22,863 to 57,061 bytes, median 34,546. Parsing runs at about 400 MB/s of footer bytes. The footer is about 11 KB per row group on the 105-column ClickBench schema (2.44 MB / 226), about 100 bytes per column chunk, plus the schema once per file.
+
+A cold read follows the number of files, not the bytes: the 24 KB and 2.4 MB footers both cost about a millisecond, a seek plus a short transfer, and 100 files cost about 0.4 ms each. Once the tail is cached, parsing is the whole cost. Many files cost more per byte than one footer, because each repeats the schema and is decoded on its own.

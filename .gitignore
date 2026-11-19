@@ -19,5 +19,10 @@ mutants.out*/
 tpch-data/
 clickbench-data/
 
+# Saved `scripts/perf` results and profiles
+bench-results/
+# dhat output before `scripts/perf heap` moves it
+dhat-heap.json
+
 # Private notes
 docs/PLAN.md

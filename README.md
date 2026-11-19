@@ -8,6 +8,10 @@ The key pieces are:
 - **Execution:** Keep hardware saturated, efficiently pipeline/parallelize work, auto-vectorization, push vs. pull model, etc.
 - **Optimizer:** Build a query optimizer. This is what turns a query into the plan that the execution stage runs.
 
+## Benchmarking
+
+`scripts/perf` runs everything: hardware limits, query timings with allocation counts, CPU profiles, and heap profiles, with DataFusion as a reference engine. See [docs/BENCHMARKING.md](./docs/BENCHMARKING.md) for what each layer is for and when to use it.
+
 ## License
 
 MIT. See [LICENSE](./LICENSE) for the full text.

@@ -6,7 +6,7 @@ My ideas:
 
 
 
-This file is what the engine is trying to be and the ideas it is built on. `PARQUET.md` covers the file format. `NUMBERS.md` holds the measurements.
+This file is what the engine is trying to be and the ideas it is built on. `PARQUET.md` covers the file format. `BENCHMARKING.md` covers how performance is measured.
 
 ## The goal
 
