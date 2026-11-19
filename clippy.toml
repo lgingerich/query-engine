@@ -1,6 +1,4 @@
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
-# `..` keeps Clippy's default list
-doc-valid-idents = ["ClickBench", "DataFusion", "DuckDB", ".."]
 too-many-lines-threshold = 80
 cognitive-complexity-threshold = 15
