@@ -1,8 +1,8 @@
-/// Errors from resolving a [`Query`](crate::query::Query) against a table
-
-use thiserror::Error;
 use crate::types::DataType;
 
+use thiserror::Error;
+
+/// Errors from resolving a parsed query against a table.
 #[derive(Debug, Error)]
 pub enum BindError {
     /// Column name not in the table schema

@@ -29,6 +29,7 @@ pub struct Session {
 
 impl Session {
     /// Empty session
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -62,14 +63,16 @@ impl Session {
         println!("query={query:#?}");
         println!("session tables={:#?}", self.tables);
 
-        // 2. bind query        
-        
+        // 2. bind query
+
         // verify query tables exist in session table names
-        let source = self.tables.get(&query.table)
-          .ok_or_else(|| EngineError::TableNotFound(query.table.clone()))?;
+        let source = self
+            .tables
+            .get(&query.table)
+            .ok_or_else(|| EngineError::TableNotFound(query.table.clone()))?;
 
         // bind query -> check validity of projections/filters, bind filters with literal values, convert column names to indexes
-        let bound_query = bind(query, &source.schema())?;
+        let bound_query = bind(query, source.schema())?;
         println!("bound_query={bound_query:#?}");
 
         // 3. plan query

@@ -2,9 +2,7 @@
 
 use std::path::Path;
 
-use query_engine::errors::EngineError;
-use query_engine::parquet::ParquetSource;
-use query_engine::session::Session;
+use query_engine::{EngineError, ParquetSource, Session};
 
 /*
 TODO:
@@ -16,21 +14,22 @@ Parse AST -> get all columns needed in query -> check file_metadata schema -> er
 High-level architecture/flow
 
 1. open(path) -> source: file reader + footer + schema
-    parse footer and convert schema (not reading any real file data here yet)
+    parse footer and convert schema, including column-chunk min/max
+    page indexes and bloom filters stay unread
 2. bind(query, schema) -> ScanPlan
     convert human query into engine-readable scan request
     no real operations or io here, this is like type checking
 3. plan(scan_request) -> ScanPlan
-    using Parquet metadata, plan out what row groups and data we keep
-    no io or execution here, only checks against metadata
+    using footer metadata, decide which row groups to keep
+    a surviving equality filter may then read that column's bloom filter;
+    a selective filter may read the page index for those columns
 4. scan(scan_plan) -> data page stream
-    open row groups, read column chunks, decode data pages
+    open the remaining row groups, read column chunks, decode data pages
     real data io is happening here now
     output stream/iterator of data
 5. execute
     start executing the query
     filtering + aggregation + etc.
-
 
 Various Notes
 - Projection = column pruning
@@ -42,6 +41,7 @@ fn main() -> Result<(), EngineError> {
     let path = Path::new("./tpch-data/customer.parquet");
     let mut session = Session::new();
     session.register("customer", ParquetSource::open(path)?)?;
+    println!("session={session:#?}");
 
     // Build and execute query
     let sql = "\
@@ -52,7 +52,7 @@ fn main() -> Result<(), EngineError> {
     ";
     let results = session.execute(sql)?; // mock api method
 
-    println!("{results:#?}");
+    println!("results={results:#?}");
 
     Ok(())
 }

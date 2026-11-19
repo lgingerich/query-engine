@@ -55,24 +55,24 @@ pub(crate) enum Projection {
 #[derive(Debug)]
 pub(crate) struct Filter {
     /// Column name, not resolved yet
-    pub column: String,
+    pub(crate) column: String,
     /// Comparison
-    pub op: CompareOp,
+    pub(crate) op: CompareOp,
     /// Value to compare against
-    pub value: Literal,
+    pub(crate) value: Literal,
 }
 
 /// Single-table `SELECT` with names not resolved yet
 #[derive(Debug)]
 pub(crate) struct Query {
     /// Table in `FROM`
-    pub table: String,
+    pub(crate) table: String,
     /// `SELECT` list
-    pub projection: Projection,
+    pub(crate) projection: Projection,
     /// `WHERE` filters
-    pub filters: Vec<Filter>,
+    pub(crate) filters: Vec<Filter>,
     /// `LIMIT n`
-    pub limit: Option<u64>,
+    pub(crate) limit: Option<u64>,
 }
 
 /// Parses one SQL statement into a [`Query`].

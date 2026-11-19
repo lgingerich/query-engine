@@ -2,7 +2,7 @@
 
 use thiserror::Error;
 
-/// Errors from turning SQL into a [`Query`](crate::query::Query)
+/// Errors from turning SQL text into a parsed query.
 #[derive(Debug, Error)]
 pub enum QueryError {
     /// Invalid SQL

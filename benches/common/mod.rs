@@ -25,9 +25,7 @@ use std::time::{Duration, Instant};
 use datafusion::arrow::array::RecordBatch;
 use datafusion::error::DataFusionError;
 use datafusion::prelude::{ParquetReadOptions, SessionConfig, SessionContext};
-use query_engine::errors::{EngineError, QueryError};
-use query_engine::parquet::ParquetSource;
-use query_engine::session::Session;
+use query_engine::{EngineError, ParquetSource, QueryError, Session};
 use tokio::runtime::Runtime;
 
 const DEFAULT_RUNS: usize = 10;

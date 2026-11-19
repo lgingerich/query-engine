@@ -1,30 +1,30 @@
 pub(crate) mod errors;
 
+use crate::bind::errors::BindError;
 use crate::query::{CompareOp, Literal, Projection, Query};
 use crate::types::{DataType, Field, Schema};
-use crate::bind::errors::BindError;
 use crate::utils::{parse_date, parse_decimal};
 
 #[derive(Debug)]
 pub(crate) struct BoundQuery {
     /// Table column indices to return, in output order. `SELECT *` is `0..n`
-    pub projection: Vec<usize>,
+    pub(crate) projection: Vec<usize>,
     /// `WHERE` filters, AND-ed, with columns resolved and values typed
-    pub filters: Vec<BoundFilter>,
+    pub(crate) filters: Vec<BoundFilter>,
     /// `LIMIT n`
-    pub limit: Option<u64>,
+    pub(crate) limit: Option<u64>,
     /// Fields of the result, in output order
-    pub output_schema: Schema,
+    pub(crate) output_schema: Schema,
 }
 
 #[derive(Debug)]
 pub(crate) struct BoundFilter {
     /// Index into the table schema
-    pub column: usize,
+    pub(crate) column: usize,
     /// Comparison
-    pub op: CompareOp,
+    pub(crate) op: CompareOp,
     /// Literal converted to the column's type
-    pub value: ScalarValue,
+    pub(crate) value: ScalarValue,
 }
 
 #[derive(Debug)]
@@ -39,38 +39,46 @@ pub(crate) enum ScalarValue {
 }
 
 pub(crate) fn bind(query: Query, schema: &Schema) -> Result<BoundQuery, BindError> {
-  // Projection
-  let projection = match query.projection {
-    Projection::All => (0..schema.fields().len()).collect(),
-    Projection::Columns(names) => {
-      let mut indices = Vec::with_capacity(names.len());
-      for name in names {
-        let Some(i) = schema.index_of(&name) else {
-          return Err(BindError::ColumnNotFound(name));
-        };
-        indices.push(i);
-      }
-      indices
-    }
-  };
-  
-  // Filter
-  let mut filters = Vec::with_capacity(query.filters.len());
-  for filter in query.filters {
-    let Some(column) = schema.index_of(&filter.column) else {
-      return Err(BindError::ColumnNotFound(filter.column));
+    // Projection
+    let projection = match query.projection {
+        Projection::All => (0..schema.fields().len()).collect(),
+        Projection::Columns(names) => {
+            let mut indices = Vec::with_capacity(names.len());
+            for name in names {
+                let Some(i) = schema.index_of(&name) else {
+                    return Err(BindError::ColumnNotFound(name));
+                };
+                indices.push(i);
+            }
+            indices
+        }
     };
-    let field = &schema.fields()[column];
-    let op = filter.op;
-    let value = bind_literal(field, filter.value)?;
-    filters.push(BoundFilter { column, op, value });
-  }
-  
-  let output_schema = Schema::new(
-    projection.iter().map(|&i| schema.fields()[i].clone()).collect()
-  );
-  
-  Ok(BoundQuery { projection, filters, limit: query.limit, output_schema })
+
+    // Filter
+    let mut filters = Vec::with_capacity(query.filters.len());
+    for filter in query.filters {
+        let Some(column) = schema.index_of(&filter.column) else {
+            return Err(BindError::ColumnNotFound(filter.column));
+        };
+        let field = &schema.fields()[column];
+        let op = filter.op;
+        let value = bind_literal(field, filter.value)?;
+        filters.push(BoundFilter { column, op, value });
+    }
+
+    let output_schema = Schema::new(
+        projection
+            .iter()
+            .map(|&i| schema.fields()[i].clone())
+            .collect(),
+    );
+
+    Ok(BoundQuery {
+        projection,
+        filters,
+        limit: query.limit,
+        output_schema,
+    })
 }
 
 fn bind_literal(field: &Field, literal: Literal) -> Result<ScalarValue, BindError> {
@@ -81,12 +89,16 @@ fn bind_literal(field: &Field, literal: Literal) -> Result<ScalarValue, BindErro
     };
 
     match (field.data_type, literal) {
-        (DataType::Int32, Literal::Number(s)) => {
-            s.parse().ok().map(ScalarValue::Int32).ok_or_else(|| invalid(&s))
-        }
-        (DataType::Int64, Literal::Number(s)) => {
-            s.parse().ok().map(ScalarValue::Int64).ok_or_else(|| invalid(&s))
-        }
+        (DataType::Int32, Literal::Number(s)) => s
+            .parse()
+            .ok()
+            .map(ScalarValue::Int32)
+            .ok_or_else(|| invalid(&s)),
+        (DataType::Int64, Literal::Number(s)) => s
+            .parse()
+            .ok()
+            .map(ScalarValue::Int64)
+            .ok_or_else(|| invalid(&s)),
         (DataType::Decimal { scale, .. }, Literal::Number(s)) => parse_decimal(&s, scale)
             .map(ScalarValue::Decimal)
             .ok_or_else(|| invalid(&s)),

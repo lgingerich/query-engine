@@ -8,7 +8,6 @@ use std::fs::File;
 use std::path::Path;
 
 use parquet::file::reader::{FileReader, SerializedFileReader};
-use parquet::file::serialized_reader::ReadOptionsBuilder;
 use parquet::schema::types::SchemaDescriptor;
 
 use crate::parquet::errors::ParquetFileError;
@@ -45,13 +44,15 @@ impl ParquetSource {
     pub fn open(path: &Path) -> Result<Self, ParquetFileError> {
         // NOTE: The parquet crate reader has a moderate amount of logic baked in for how footers are read and verified.
         // When working with fetches from object storage, need to re-evaluate this.
-        let read_options = ReadOptionsBuilder::new().build();
-        let reader = SerializedFileReader::new_with_options(File::open(path)?, read_options)?;
+        // Footer only. Page indexes and bloom filters are read later, for the columns a query actually filters.
+        // Should I be using any of the filereader options that Parquet crate has?
+        let reader = SerializedFileReader::new(File::open(path)?)?;
         let schema = convert_schema(reader.metadata().file_metadata().schema_descr())?;
         Ok(Self { reader, schema })
     }
 
     /// Engine schema for this file
+    #[must_use]
     pub fn schema(&self) -> &Schema {
         &self.schema
     }
