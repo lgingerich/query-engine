@@ -41,12 +41,14 @@ fn convert_column(col: &ColumnDescriptor) -> Result<Field, ParquetFileError> {
     }
 
     let data_type = match (col.physical_type(), col.converted_type()) {
-        // 16-bit ints are widened to `Int32`. Every value fits, and Parquet
-        // stores them as INT32 anyway
+        // 8- and 16-bit ints are widened to `Int32`. Every value fits, and
+        // Parquet stores them as INT32 anyway
         (
             PhysicalType::INT32,
             ConvertedType::NONE
             | ConvertedType::INT_32
+            | ConvertedType::INT_8
+            | ConvertedType::UINT_8
             | ConvertedType::INT_16
             | ConvertedType::UINT_16,
         ) => DataType::Int32,
@@ -137,19 +139,29 @@ mod tests {
     fn widened_and_unannotated() {
         let types = convert(
             "message m {
+                required int32 signed8 (INTEGER(8,true));
+                required int32 unsigned8 (INTEGER(8,false));
                 required int32 signed16 (INTEGER(16,true));
                 required int32 unsigned16 (INTEGER(16,false));
                 optional binary text;
             }",
         );
-        assert_eq!(types, [DataType::Int32, DataType::Int32, DataType::Utf8]);
+        assert_eq!(
+            types,
+            [
+                DataType::Int32,
+                DataType::Int32,
+                DataType::Int32,
+                DataType::Int32,
+                DataType::Utf8
+            ]
+        );
     }
 
     #[test]
     fn other_types_rejected() {
         for column in [
             "required int32 u (INTEGER(32,false));",
-            "required int32 tiny (INTEGER(8,true));",
             "required double d;",
             "required boolean b;",
         ] {

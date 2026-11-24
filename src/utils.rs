@@ -26,7 +26,8 @@ pub(crate) fn parse_date(s: &str) -> Option<i32> {
     if day < 1 || day > days_in_month(year, month) {
         return None;
     }
-    Some(days_from_civil(year, month, day))
+    // Years past ~5.8 million are out of `Date32` range
+    i32::try_from(days_from_civil(year.into(), month.into(), day.into())).ok()
 }
 
 fn days_in_month(year: i32, month: i32) -> i32 {
@@ -39,8 +40,8 @@ fn days_in_month(year: i32, month: i32) -> i32 {
     }
 }
 
-/// Howard Hinnant's days_from_civil
-fn days_from_civil(year: i32, month: i32, day: i32) -> i32 {
+/// Howard Hinnant's `days_from_civil`. `i64` so no `i32` year can overflow
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     let y = if month <= 2 { year - 1 } else { year };
     let era = y.div_euclid(400);
     let year_of_era = y.rem_euclid(400);
@@ -48,4 +49,23 @@ fn days_from_civil(year: i32, month: i32, day: i32) -> i32 {
     let day_of_year = (153 * month_from_march + 2) / 5 + day - 1;
     let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
     era * 146_097 + day_of_era - 719_468
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_date;
+
+    #[test]
+    fn dates() {
+        assert_eq!(parse_date("1970-01-01"), Some(0));
+        assert_eq!(parse_date("1995-03-15"), Some(9204));
+        assert_eq!(parse_date("2000-02-29"), Some(11016));
+        assert_eq!(parse_date("1900-02-29"), None);
+    }
+
+    #[test]
+    fn out_of_range_year_is_none_not_overflow() {
+        assert_eq!(parse_date("99999999-01-01"), None);
+        assert_eq!(parse_date("2147483647-12-31"), None);
+    }
 }

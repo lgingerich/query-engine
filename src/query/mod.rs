@@ -3,8 +3,8 @@
 pub(crate) mod errors;
 
 use sqlparser::ast::{
-    BinaryOperator, DataType as SqlType, Expr, LimitClause, SelectItem, SetExpr, Statement,
-    TableFactor, UnaryOperator, Value,
+    BinaryOperator, DataType as SqlType, Expr, GroupByExpr, LimitClause, SelectItem, SetExpr,
+    Statement, TableFactor, UnaryOperator, Value,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -82,22 +82,44 @@ pub(crate) struct Query {
 /// Invalid SQL, or SQL outside the supported subset.
 pub(crate) fn parse(sql: &str) -> Result<Query, QueryError> {
     let statements = Parser::parse_sql(&DIALECT, sql)?;
-    statements
-        .first()
-        .and_then(query)
-        .ok_or_else(|| QueryError::Unsupported(sql.to_string()))
+    match statements.as_slice() {
+        [statement] => query(statement),
+        _ => None,
+    }
+    .ok_or_else(|| QueryError::Unsupported(sql.to_string()))
 }
 
+/// `None` for anything outside the supported subset, so unsupported clauses
+/// fail instead of being silently dropped.
+///
+/// Only checks the clauses a `GenericDialect` user is likely to write; exotic
+/// ones (`QUALIFY`, `LATERAL VIEW`, `CONNECT BY`, ...) are still ignored. Match
+/// on every field of `Query` and `Select` if that ever matters.
 fn query(statement: &Statement) -> Option<Query> {
     let Statement::Query(query) = statement else {
         return None;
     };
+    if query.with.is_some() || query.order_by.is_some() || query.fetch.is_some() {
+        return None;
+    }
     let SetExpr::Select(select) = query.body.as_ref() else {
         return None;
     };
-    let TableFactor::Table { name, .. } = &select.from.first()?.relation else {
+    let no_group_by =
+        matches!(&select.group_by, GroupByExpr::Expressions(e, m) if e.is_empty() && m.is_empty());
+    if select.distinct.is_some() || select.top.is_some() || select.having.is_some() || !no_group_by
+    {
+        return None;
+    }
+    let [from] = select.from.as_slice() else {
         return None;
     };
+    let TableFactor::Table { name, .. } = &from.relation else {
+        return None;
+    };
+    if !from.joins.is_empty() {
+        return None;
+    }
 
     Some(Query {
         table: name.to_string(),
@@ -106,7 +128,10 @@ fn query(statement: &Statement) -> Option<Query> {
             Some(expr) => filters(expr)?,
             None => Vec::new(),
         },
-        limit: limit(query.limit_clause.as_ref()),
+        limit: match &query.limit_clause {
+            Some(clause) => Some(limit(clause)?),
+            None => None,
+        },
     })
 }
 
@@ -188,13 +213,20 @@ fn compare_op(op: &BinaryOperator) -> Option<CompareOp> {
     }
 }
 
-fn limit(clause: Option<&LimitClause>) -> Option<u64> {
+/// `LIMIT n`. `None` for anything else (`OFFSET`, `LIMIT a, b`,
+/// a non-integer or negative count)
+fn limit(clause: &LimitClause) -> Option<u64> {
     let LimitClause::LimitOffset {
-        limit: Some(expr), ..
-    } = clause?
+        limit: Some(expr),
+        offset: None,
+        limit_by,
+    } = clause
     else {
         return None;
     };
+    if !limit_by.is_empty() {
+        return None;
+    }
     let Literal::Number(n) = literal(expr)? else {
         return None;
     };
@@ -204,6 +236,7 @@ fn limit(clause: Option<&LimitClause>) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::{Literal, parse};
+    use crate::query::errors::QueryError;
 
     fn first_literal(sql: &str) -> Option<Literal> {
         parse(sql)
@@ -225,5 +258,33 @@ mod tests {
 
         let date = first_literal("SELECT * FROM t WHERE a < DATE '1995-03-15'");
         assert!(matches!(date, Some(Literal::Date(d)) if d == "1995-03-15"));
+    }
+
+    #[test]
+    fn supported_limit() {
+        assert!(matches!(parse("SELECT * FROM t LIMIT 5"), Ok(q) if q.limit == Some(5)));
+        assert!(matches!(parse("SELECT * FROM t"), Ok(q) if q.limit.is_none()));
+    }
+
+    #[test]
+    fn unsupported_clauses_rejected() {
+        for sql in [
+            "SELECT a FROM t ORDER BY a LIMIT 5",
+            "SELECT a FROM t LIMIT 5 OFFSET 10",
+            "SELECT a FROM t LIMIT 10, 5",
+            "SELECT a FROM t LIMIT -1",
+            "SELECT a FROM t GROUP BY a",
+            "SELECT a FROM t GROUP BY a HAVING a > 1",
+            "SELECT DISTINCT a FROM t",
+            "SELECT a FROM t JOIN u ON t.a = u.a",
+            "SELECT a FROM t, u",
+            "WITH c AS (SELECT a FROM t) SELECT a FROM c",
+            "SELECT a FROM t; SELECT a FROM t",
+        ] {
+            assert!(
+                matches!(parse(sql), Err(QueryError::Unsupported(_))),
+                "{sql}"
+            );
+        }
     }
 }
