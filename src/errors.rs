@@ -4,6 +4,7 @@ use thiserror::Error;
 
 pub use crate::bind::errors::BindError;
 pub use crate::parquet::errors::ParquetFileError;
+use crate::plan::errors::PlanError;
 pub use crate::query::errors::QueryError;
 
 /// Any error the engine can return.
@@ -15,9 +16,12 @@ pub enum EngineError {
     /// SQL couldn't be parsed or isn't supported.
     #[error(transparent)]
     Query(#[from] QueryError),
-    /// Query doesn't match the table: unknown column or type error
+    /// Query doesn't match the known table.
     #[error(transparent)]
     Bind(#[from] BindError),
+    /// Query couldn't build scan plan against Parquet file.
+    #[error(transparent)]
+    Plan(#[from] PlanError),
     /// No table registered under this name
     #[error("table `{0}` not found")]
     TableNotFound(String),

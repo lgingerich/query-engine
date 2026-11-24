@@ -1,6 +1,7 @@
 //! Registered tables and the entry point for running SQL
 
 use crate::bind::bind;
+use crate::plan::plan;
 use crate::query::parse;
 use crate::types::{Batch, Schema};
 use crate::{errors::EngineError, parquet::ParquetSource};
@@ -76,6 +77,8 @@ impl Session {
         println!("bound_query={bound_query:#?}");
 
         // 3. plan query
+        let scan_plan = plan(bound_query, source)?;
+        println!("scan_plan={scan_plan:#?}");
 
         // 4. scan + execute
 
