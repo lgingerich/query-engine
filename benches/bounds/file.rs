@@ -118,14 +118,9 @@ impl ParquetFile {
         let column = group.column(leaf);
         let rows = self.row_group_rows(rg);
         let size = |bytes: Option<i32>| bytes.and_then(|b| u64::try_from(b).ok()).unwrap_or(0);
-        let offsets = self
-            .meta
-            .offset_index()
-            .and_then(|index| index.get(rg)?.get(leaf));
-        let column_index = self
-            .meta
-            .column_index()
-            .and_then(|index| index.get(rg)?.get(leaf));
+        let page_index = self.meta.page_index_for_row_group(rg);
+        let offsets = page_index.offset_index(leaf);
+        let column_index = page_index.column_index(leaf);
         let pages = offsets.map(|offsets| {
             let locations = offsets.page_locations();
             locations

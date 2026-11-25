@@ -9,14 +9,14 @@ repository = "https://github.com/lgingerich/query-engine"
 license = "MIT"
 
 [dependencies]
-parquet = { version = "60.1.0", default-features = false, features = ["snap"] }
+parquet = { version = "60.2.0", default-features = false, features = ["snap"] }
 thiserror = "2.0.21"
-sqlparser = "0.64.0"
+sqlparser = "0.63.0"
 
 [dev-dependencies]
 # Reference engine for the `query` and `heap` benches. `benches/bounds` and its
 # tests (`tests/bounds`) use its planner and Parquet reader
-datafusion = "55.2.0"
+datafusion = "56.0.0"
 # Per-call-site heap profiles, `benches/heap.rs`
 dhat = "0.3.3"
 # Draining DataFusion's record batch streams in `benches/bounds`
