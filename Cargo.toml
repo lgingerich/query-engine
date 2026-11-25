@@ -82,8 +82,11 @@ strip = false
 
 # Dependencies build without debug info: about 20% smaller debug builds at no build-time
 # cost. This workspace's own crates keep full debug info for backtraces and debuggers.
+# Dependencies are also optimized so tests that lean on them run fast; this workspace's
+# own crates stay at opt-level 0 for quick rebuilds.
 [profile.dev.package."*"]
 debug = false
+opt-level = 2
 
 [lints.rust]
 # Levels: `deny` fails every build, for code that is unsound or definitely wrong.
