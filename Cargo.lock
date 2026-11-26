@@ -721,7 +721,7 @@ dependencies = [
  "object_store",
  "parking_lot 0.13.0",
  "parquet",
- "sqlparser",
+ "sqlparser 0.63.0",
  "tempfile",
  "tokio",
  "url",
@@ -799,7 +799,7 @@ dependencies = [
  "object_store",
  "parquet",
  "recursive",
- "sqlparser",
+ "sqlparser 0.63.0",
  "tokio",
  "uuid",
  "web-time",
@@ -1008,7 +1008,7 @@ dependencies = [
  "recursive",
  "serde",
  "serde_json",
- "sqlparser",
+ "sqlparser 0.63.0",
 ]
 
 [[package]]
@@ -1355,7 +1355,7 @@ dependencies = [
  "log",
  "recursive",
  "regex",
- "sqlparser",
+ "sqlparser 0.63.0",
  "stacker",
 ]
 
@@ -2339,7 +2339,7 @@ dependencies = [
  "dhat",
  "futures",
  "parquet",
- "sqlparser",
+ "sqlparser 0.64.0",
  "thiserror",
  "tokio",
 ]
@@ -2642,6 +2642,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sqlparser"
+version = "0.64.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92e0d273b4f8ddd14a35ed36862acbc9cc96cec578e36ee1881a9d42e0e0f2c8"
+dependencies = [
+ "log",
+ "recursive",
+]
+
+[[package]]
 name = "sqlparser_derive"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2711,7 +2721,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys",

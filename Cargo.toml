@@ -11,7 +11,7 @@ license = "MIT"
 [dependencies]
 parquet = { version = "60.2.0", default-features = false, features = ["snap"] }
 thiserror = "2.0.21"
-sqlparser = "0.63.0"
+sqlparser = "0.64.0"
 
 [dev-dependencies]
 # Reference engine for the `query` and `heap` benches. `benches/bounds` and its
